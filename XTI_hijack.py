@@ -1,8 +1,11 @@
 import torch
+
 try:
     import intel_extension_for_pytorch as ipex
+
     if torch.xpu.is_available():
         from library.ipex import ipex_init
+
         ipex_init()
 except Exception:
     pass
@@ -95,7 +98,9 @@ def unet_forward_XTI(
         is_final_block = i == len(self.up_blocks) - 1
 
         res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
-        down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]  # skip connection
+        down_block_res_samples = down_block_res_samples[
+            : -len(upsample_block.resnets)
+        ]  # skip connection
 
         # if we have not reached the final block and need to forward the upsample size, we do it here
         # 前述のように最後のブロック以外ではupsample_sizeを伝える
@@ -113,7 +118,10 @@ def unet_forward_XTI(
             up_i += 3
         else:
             sample = upsample_block(
-                hidden_states=sample, temb=emb, res_hidden_states_tuple=res_samples, upsample_size=upsample_size
+                hidden_states=sample,
+                temb=emb,
+                res_hidden_states_tuple=res_samples,
+                upsample_size=upsample_size,
             )
 
     # 6. post-process
@@ -128,7 +136,12 @@ def unet_forward_XTI(
 
 
 def downblock_forward_XTI(
-    self, hidden_states, temb=None, encoder_hidden_states=None, attention_mask=None, cross_attention_kwargs=None
+    self,
+    hidden_states,
+    temb=None,
+    encoder_hidden_states=None,
+    attention_mask=None,
+    cross_attention_kwargs=None,
 ):
     output_states = ()
     i = 0
@@ -145,13 +158,19 @@ def downblock_forward_XTI(
 
                 return custom_forward
 
-            hidden_states = torch.utils.checkpoint.checkpoint(create_custom_forward(resnet), hidden_states, temb)
             hidden_states = torch.utils.checkpoint.checkpoint(
-                create_custom_forward(attn, return_dict=False), hidden_states, encoder_hidden_states[i]
+                create_custom_forward(resnet), hidden_states, temb
+            )
+            hidden_states = torch.utils.checkpoint.checkpoint(
+                create_custom_forward(attn, return_dict=False),
+                hidden_states,
+                encoder_hidden_states[i],
             )[0]
         else:
             hidden_states = resnet(hidden_states, temb)
-            hidden_states = attn(hidden_states, encoder_hidden_states=encoder_hidden_states[i]).sample
+            hidden_states = attn(
+                hidden_states, encoder_hidden_states=encoder_hidden_states[i]
+            ).sample
 
         output_states += (hidden_states,)
         i += 1
@@ -191,13 +210,19 @@ def upblock_forward_XTI(
 
                 return custom_forward
 
-            hidden_states = torch.utils.checkpoint.checkpoint(create_custom_forward(resnet), hidden_states, temb)
             hidden_states = torch.utils.checkpoint.checkpoint(
-                create_custom_forward(attn, return_dict=False), hidden_states, encoder_hidden_states[i]
+                create_custom_forward(resnet), hidden_states, temb
+            )
+            hidden_states = torch.utils.checkpoint.checkpoint(
+                create_custom_forward(attn, return_dict=False),
+                hidden_states,
+                encoder_hidden_states[i],
             )[0]
         else:
             hidden_states = resnet(hidden_states, temb)
-            hidden_states = attn(hidden_states, encoder_hidden_states=encoder_hidden_states[i]).sample
+            hidden_states = attn(
+                hidden_states, encoder_hidden_states=encoder_hidden_states[i]
+            ).sample
 
         i += 1
 

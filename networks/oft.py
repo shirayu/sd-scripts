@@ -10,7 +10,9 @@ import torch
 import re
 
 
-RE_UPDOWN = re.compile(r"(up|down)_blocks_(\d+)_(resnets|upsamplers|downsamplers|attentions)_(\d+)_")
+RE_UPDOWN = re.compile(
+    r"(up|down)_blocks_(\d+)_(resnets|upsamplers|downsamplers|attentions)_(\d+)_"
+)
 
 
 class OFTModule(torch.nn.Module):
@@ -46,7 +48,9 @@ class OFTModule(torch.nn.Module):
         self.register_buffer("alpha", torch.tensor(alpha))
 
         self.block_size = out_dim // self.num_blocks
-        self.oft_blocks = torch.nn.Parameter(torch.zeros(self.num_blocks, self.block_size, self.block_size))
+        self.oft_blocks = torch.nn.Parameter(
+            torch.zeros(self.num_blocks, self.block_size, self.block_size)
+        )
 
         self.out_dim = out_dim
         self.shape = org_module.weight.shape
@@ -66,7 +70,11 @@ class OFTModule(torch.nn.Module):
         norm_Q = torch.norm(block_Q.flatten())
         new_norm_Q = torch.clamp(norm_Q, max=self.constraint)
         block_Q = block_Q * ((new_norm_Q + 1e-8) / (norm_Q + 1e-8))
-        I = torch.eye(self.block_size, device=self.oft_blocks.device).unsqueeze(0).repeat(self.num_blocks, 1, 1)
+        I = (
+            torch.eye(self.block_size, device=self.oft_blocks.device)
+            .unsqueeze(0)
+            .repeat(self.num_blocks, 1, 1)
+        )
         block_R = torch.matmul(I + block_Q, (I - block_Q).inverse())
 
         block_R_weighted = self.multiplier * block_R + (1 - self.multiplier) * I
@@ -166,7 +174,16 @@ def create_network(
 
 
 # Create network from weights for inference, weights are not loaded here (because can be merged)
-def create_network_from_weights(multiplier, file, vae, text_encoder, unet, weights_sd=None, for_inference=False, **kwargs):
+def create_network_from_weights(
+    multiplier,
+    file,
+    vae,
+    text_encoder,
+    unet,
+    weights_sd=None,
+    for_inference=False,
+    **kwargs,
+):
     if weights_sd is None:
         if os.path.splitext(file)[1] == ".safetensors":
             from safetensors.torch import load_file, safe_open
@@ -216,7 +233,11 @@ def create_network_from_weights(multiplier, file, vae, text_encoder, unet, weigh
 class OFTNetwork(torch.nn.Module):
     UNET_TARGET_REPLACE_MODULE_ATTN_ONLY = ["CrossAttention"]
     UNET_TARGET_REPLACE_MODULE_ALL_LINEAR = ["Transformer2DModel"]
-    UNET_TARGET_REPLACE_MODULE_CONV2D_3X3 = ["ResnetBlock2D", "Downsample2D", "Upsample2D"]
+    UNET_TARGET_REPLACE_MODULE_CONV2D_3X3 = [
+        "ResnetBlock2D",
+        "Downsample2D",
+        "Upsample2D",
+    ]
     OFT_PREFIX_UNET = "oft_unet"  # これ変えないほうがいいかな
 
     def __init__(
@@ -384,7 +405,9 @@ class OFTNetwork(torch.nn.Module):
             # Precalculate model hashes to save time on indexing
             if metadata is None:
                 metadata = {}
-            model_hash, legacy_hash = train_util.precalculate_safetensors_hashes(state_dict, metadata)
+            model_hash, legacy_hash = train_util.precalculate_safetensors_hashes(
+                state_dict, metadata
+            )
             metadata["sshs_model_hash"] = model_hash
             metadata["sshs_legacy_hash"] = legacy_hash
 

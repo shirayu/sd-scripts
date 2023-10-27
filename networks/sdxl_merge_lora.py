@@ -54,13 +54,17 @@ def merge_to_sd_model(text_encoder1, text_encoder2, unet, models, ratios, merge_
         else:
             prefix = lora.LoRANetwork.LORA_PREFIX_UNET
             target_replace_modules = (
-                lora.LoRANetwork.UNET_TARGET_REPLACE_MODULE + lora.LoRANetwork.UNET_TARGET_REPLACE_MODULE_CONV2D_3X3
+                lora.LoRANetwork.UNET_TARGET_REPLACE_MODULE
+                + lora.LoRANetwork.UNET_TARGET_REPLACE_MODULE_CONV2D_3X3
             )
 
         for name, module in root_module.named_modules():
             if module.__class__.__name__ in target_replace_modules:
                 for child_name, child_module in module.named_modules():
-                    if child_module.__class__.__name__ == "Linear" or child_module.__class__.__name__ == "Conv2d":
+                    if (
+                        child_module.__class__.__name__ == "Linear"
+                        or child_module.__class__.__name__ == "Conv2d"
+                    ):
                         lora_name = prefix + "." + name + "." + child_name
                         lora_name = lora_name.replace(".", "_")
                         name_to_module[lora_name] = child_module
@@ -76,7 +80,9 @@ def merge_to_sd_model(text_encoder1, text_encoder2, unet, models, ratios, merge_
                 alpha_key = key[: key.index("lora_down")] + "alpha"
 
                 # find original module for this lora
-                module_name = ".".join(key.split(".")[:-2])  # remove trailing ".lora_down.weight"
+                module_name = ".".join(
+                    key.split(".")[:-2]
+                )  # remove trailing ".lora_down.weight"
                 if module_name not in name_to_module:
                     print(f"no module found for LoRA weight: {key}")
                     continue
@@ -101,12 +107,19 @@ def merge_to_sd_model(text_encoder1, text_encoder2, unet, models, ratios, merge_
                     weight = (
                         weight
                         + ratio
-                        * (up_weight.squeeze(3).squeeze(2) @ down_weight.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(3)
+                        * (
+                            up_weight.squeeze(3).squeeze(2)
+                            @ down_weight.squeeze(3).squeeze(2)
+                        )
+                        .unsqueeze(2)
+                        .unsqueeze(3)
                         * scale
                     )
                 else:
                     # conv2d 3x3
-                    conved = torch.nn.functional.conv2d(down_weight.permute(1, 0, 2, 3), up_weight).permute(1, 0, 2, 3)
+                    conved = torch.nn.functional.conv2d(
+                        down_weight.permute(1, 0, 2, 3), up_weight
+                    ).permute(1, 0, 2, 3)
                     # print(conved.size(), weight.size(), module.stride, module.padding)
                     weight = weight + ratio * conved * scale
 
@@ -126,9 +139,13 @@ def merge_lora_models(models, ratios, merge_dtype, concat=False, shuffle=False):
 
         if lora_metadata is not None:
             if v2 is None:
-                v2 = lora_metadata.get(train_util.SS_METADATA_KEY_V2, None)  # returns string, SDXLはv2がないのでFalseのはず
+                v2 = lora_metadata.get(
+                    train_util.SS_METADATA_KEY_V2, None
+                )  # returns string, SDXLはv2がないのでFalseのはず
             if base_model is None:
-                base_model = lora_metadata.get(train_util.SS_METADATA_KEY_BASE_MODEL_VERSION, None)
+                base_model = lora_metadata.get(
+                    train_util.SS_METADATA_KEY_BASE_MODEL_VERSION, None
+                )
 
         # get alpha and dim
         alphas = {}  # alpha for current model
@@ -161,7 +178,7 @@ def merge_lora_models(models, ratios, merge_dtype, concat=False, shuffle=False):
         for key in tqdm(lora_sd.keys()):
             if "alpha" in key:
                 continue
-            
+
             if "lora_up" in key and concat:
                 concat_dim = 1
             elif "lora_down" in key and concat:
@@ -175,14 +192,17 @@ def merge_lora_models(models, ratios, merge_dtype, concat=False, shuffle=False):
             alpha = alphas[lora_module_name]
 
             scale = math.sqrt(alpha / base_alpha) * ratio
-            scale = abs(scale) if "lora_up" in key else scale # マイナスの重みに対応する。
-            
+            scale = abs(scale) if "lora_up" in key else scale  # マイナスの重みに対応する。
+
             if key in merged_sd:
                 assert (
-                    merged_sd[key].size() == lora_sd[key].size() or concat_dim is not None
+                    merged_sd[key].size() == lora_sd[key].size()
+                    or concat_dim is not None
                 ), f"weights shape mismatch merging v1 and v2, different dims? / 重みのサイズが合いません。v1とv2、または次元数の異なるモデルはマージできません"
                 if concat_dim is not None:
-                    merged_sd[key] = torch.cat([merged_sd[key], lora_sd[key] * scale], dim=concat_dim)
+                    merged_sd[key] = torch.cat(
+                        [merged_sd[key], lora_sd[key] * scale], dim=concat_dim
+                    )
                 else:
                     merged_sd[key] = merged_sd[key] + lora_sd[key] * scale
             else:
@@ -198,10 +218,12 @@ def merge_lora_models(models, ratios, merge_dtype, concat=False, shuffle=False):
             dim = merged_sd[key_down].shape[0]
             perm = torch.randperm(dim)
             merged_sd[key_down] = merged_sd[key_down][perm]
-            merged_sd[key_up] = merged_sd[key_up][:,perm]
+            merged_sd[key_up] = merged_sd[key_up][:, perm]
 
     print("merged model")
-    print(f"dim: {list(set(base_dims.values()))}, alpha: {list(set(base_alphas.values()))}")
+    print(
+        f"dim: {list(set(base_dims.values()))}, alpha: {list(set(base_alphas.values()))}"
+    )
 
     # check all dims are same
     dims_list = list(set(base_dims.values()))
@@ -220,13 +242,17 @@ def merge_lora_models(models, ratios, merge_dtype, concat=False, shuffle=False):
     # build minimum metadata
     dims = f"{dims_list[0]}" if all_same_dims else "Dynamic"
     alphas = f"{alphas_list[0]}" if all_same_alphas else "Dynamic"
-    metadata = train_util.build_minimum_network_metadata(v2, base_model, "networks.lora", dims, alphas, None)
+    metadata = train_util.build_minimum_network_metadata(
+        v2, base_model, "networks.lora", dims, alphas, None
+    )
 
     return merged_sd, metadata
 
 
 def merge(args):
-    assert len(args.models) == len(args.ratios), f"number of models must be equal to number of ratios / モデルの数と重みの数は合わせてください"
+    assert len(args.models) == len(
+        args.ratios
+    ), f"number of models must be equal to number of ratios / モデルの数と重みの数は合わせてください"
 
     def str_to_dtype(p):
         if p == "float":
@@ -252,29 +278,57 @@ def merge(args):
             unet,
             logit_scale,
             ckpt_info,
-        ) = sdxl_model_util.load_models_from_sdxl_checkpoint(sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0, args.sd_model, "cpu")
+        ) = sdxl_model_util.load_models_from_sdxl_checkpoint(
+            sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0, args.sd_model, "cpu"
+        )
 
-        merge_to_sd_model(text_model1, text_model2, unet, args.models, args.ratios, merge_dtype)
+        merge_to_sd_model(
+            text_model1, text_model2, unet, args.models, args.ratios, merge_dtype
+        )
 
         if args.no_metadata:
             sai_metadata = None
         else:
-            merged_from = sai_model_spec.build_merged_from([args.sd_model] + args.models)
+            merged_from = sai_model_spec.build_merged_from(
+                [args.sd_model] + args.models
+            )
             title = os.path.splitext(os.path.basename(args.save_to))[0]
             sai_metadata = sai_model_spec.build_metadata(
-                None, False, False, True, False, False, time.time(), title=title, merged_from=merged_from
+                None,
+                False,
+                False,
+                True,
+                False,
+                False,
+                time.time(),
+                title=title,
+                merged_from=merged_from,
             )
 
         print(f"saving SD model to: {args.save_to}")
         sdxl_model_util.save_stable_diffusion_checkpoint(
-            args.save_to, text_model1, text_model2, unet, 0, 0, ckpt_info, vae, logit_scale, sai_metadata, save_dtype
+            args.save_to,
+            text_model1,
+            text_model2,
+            unet,
+            0,
+            0,
+            ckpt_info,
+            vae,
+            logit_scale,
+            sai_metadata,
+            save_dtype,
         )
     else:
-        state_dict, metadata = merge_lora_models(args.models, args.ratios, merge_dtype, args.concat, args.shuffle)
+        state_dict, metadata = merge_lora_models(
+            args.models, args.ratios, merge_dtype, args.concat, args.shuffle
+        )
 
         print(f"calculating hashes and creating metadata...")
 
-        model_hash, legacy_hash = train_util.precalculate_safetensors_hashes(state_dict, metadata)
+        model_hash, legacy_hash = train_util.precalculate_safetensors_hashes(
+            state_dict, metadata
+        )
         metadata["sshs_model_hash"] = model_hash
         metadata["sshs_legacy_hash"] = legacy_hash
 
@@ -282,7 +336,15 @@ def merge(args):
             merged_from = sai_model_spec.build_merged_from(args.models)
             title = os.path.splitext(os.path.basename(args.save_to))[0]
             sai_metadata = sai_model_spec.build_metadata(
-                state_dict, False, False, True, True, False, time.time(), title=title, merged_from=merged_from
+                state_dict,
+                False,
+                False,
+                True,
+                True,
+                False,
+                time.time(),
+                title=title,
+                merged_from=merged_from,
             )
             metadata.update(sai_metadata)
 
@@ -313,12 +375,23 @@ def setup_parser() -> argparse.ArgumentParser:
         help="Stable Diffusion model to load: ckpt or safetensors file, merge LoRA models if omitted / 読み込むモデル、ckptまたはsafetensors。省略時はLoRAモデル同士をマージする",
     )
     parser.add_argument(
-        "--save_to", type=str, default=None, help="destination file name: ckpt or safetensors file / 保存先のファイル名、ckptまたはsafetensors"
+        "--save_to",
+        type=str,
+        default=None,
+        help="destination file name: ckpt or safetensors file / 保存先のファイル名、ckptまたはsafetensors",
     )
     parser.add_argument(
-        "--models", type=str, nargs="*", help="LoRA models to merge: ckpt or safetensors file / マージするLoRAモデル、ckptまたはsafetensors"
+        "--models",
+        type=str,
+        nargs="*",
+        help="LoRA models to merge: ckpt or safetensors file / マージするLoRAモデル、ckptまたはsafetensors",
     )
-    parser.add_argument("--ratios", type=float, nargs="*", help="ratios for each model / それぞれのLoRAモデルの比率")
+    parser.add_argument(
+        "--ratios",
+        type=float,
+        nargs="*",
+        help="ratios for each model / それぞれのLoRAモデルの比率",
+    )
     parser.add_argument(
         "--no_metadata",
         action="store_true",
@@ -334,8 +407,7 @@ def setup_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--shuffle",
         action="store_true",
-        help="shuffle lora weight./ "
-        + "LoRAの重みをシャッフルする",
+        help="shuffle lora weight./ " + "LoRAの重みをシャッフルする",
     )
 
     return parser

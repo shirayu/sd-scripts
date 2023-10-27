@@ -22,7 +22,9 @@ def cache_to_disk(args: argparse.Namespace) -> None:
     train_util.prepare_dataset_args(args, True)
 
     # check cache latents arg
-    assert args.cache_latents_to_disk, "cache_latents_to_disk must be True / cache_latents_to_diskはTrueである必要があります"
+    assert (
+        args.cache_latents_to_disk
+    ), "cache_latents_to_disk must be True / cache_latents_to_diskはTrueである必要があります"
 
     use_dreambooth_method = args.in_json is None
 
@@ -39,7 +41,9 @@ def cache_to_disk(args: argparse.Namespace) -> None:
 
     # データセットを準備する
     if args.dataset_class is None:
-        blueprint_generator = BlueprintGenerator(ConfigSanitizer(True, True, False, True))
+        blueprint_generator = BlueprintGenerator(
+            ConfigSanitizer(True, True, False, True)
+        )
         if args.dataset_config is not None:
             print(f"Load dataset config from {args.dataset_config}")
             user_config = config_util.load_user_config(args.dataset_config)
@@ -77,8 +81,12 @@ def cache_to_disk(args: argparse.Namespace) -> None:
                     ]
                 }
 
-        blueprint = blueprint_generator.generate(user_config, args, tokenizer=tokenizers)
-        train_dataset_group = config_util.generate_dataset_group_by_blueprint(blueprint.dataset_group)
+        blueprint = blueprint_generator.generate(
+            user_config, args, tokenizer=tokenizers
+        )
+        train_dataset_group = config_util.generate_dataset_group_by_blueprint(
+            blueprint.dataset_group
+        )
     else:
         train_dataset_group = train_util.load_arbitrary_dataset(args, tokenizers)
 
@@ -86,7 +94,9 @@ def cache_to_disk(args: argparse.Namespace) -> None:
 
     current_epoch = Value("i", 0)
     current_step = Value("i", 0)
-    ds_for_collator = train_dataset_group if args.max_data_loader_n_workers == 0 else None
+    ds_for_collator = (
+        train_dataset_group if args.max_data_loader_n_workers == 0 else None
+    )
     collator = train_util.collator_class(current_epoch, current_step, ds_for_collator)
 
     # acceleratorを準備する
@@ -100,11 +110,13 @@ def cache_to_disk(args: argparse.Namespace) -> None:
     # モデルを読み込む
     print("load model")
     if args.sdxl:
-        (_, _, _, vae, _, _, _) = sdxl_train_util.load_target_model(args, accelerator, "sdxl", weight_dtype)
+        (_, _, _, vae, _, _, _) = sdxl_train_util.load_target_model(
+            args, accelerator, "sdxl", weight_dtype
+        )
     else:
         _, vae, _, _ = train_util.load_target_model(args, weight_dtype, accelerator)
 
-    if torch.__version__ >= "2.0.0": # PyTorch 2.0.0 以上対応のxformersなら以下が使える
+    if torch.__version__ >= "2.0.0":  # PyTorch 2.0.0 以上対応のxformersなら以下が使える
         vae.set_use_memory_efficient_attention_xformers(args.xformers)
     vae.to(accelerator.device, dtype=vae_dtype)
     vae.requires_grad_(False)
@@ -114,7 +126,9 @@ def cache_to_disk(args: argparse.Namespace) -> None:
     train_dataset_group.set_caching_mode("latents")
 
     # DataLoaderのプロセス数：0はメインプロセスになる
-    n_workers = min(args.max_data_loader_n_workers, os.cpu_count() - 1)  # cpu_count-1 ただし最大で指定された数まで
+    n_workers = min(
+        args.max_data_loader_n_workers, os.cpu_count() - 1
+    )  # cpu_count-1 ただし最大で指定された数まで
 
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset_group,
@@ -143,25 +157,37 @@ def cache_to_disk(args: argparse.Namespace) -> None:
             resized_sizes = batch["resized_sizes"][i : i + vae_batch_size]
 
             image_infos = []
-            for i, (image, absolute_path, resized_size) in enumerate(zip(images, absolute_paths, resized_sizes)):
-                image_info = train_util.ImageInfo(absolute_path, 1, "dummy", False, absolute_path)
+            for i, (image, absolute_path, resized_size) in enumerate(
+                zip(images, absolute_paths, resized_sizes)
+            ):
+                image_info = train_util.ImageInfo(
+                    absolute_path, 1, "dummy", False, absolute_path
+                )
                 image_info.image = image
                 image_info.bucket_reso = bucket_reso
                 image_info.resized_size = resized_size
                 image_info.latents_npz = os.path.splitext(absolute_path)[0] + ".npz"
 
                 if args.skip_existing:
-                    if train_util.is_disk_cached_latents_is_expected(image_info.bucket_reso, image_info.latents_npz, flip_aug):
-                        print(f"Skipping {image_info.latents_npz} because it already exists.")
+                    if train_util.is_disk_cached_latents_is_expected(
+                        image_info.bucket_reso, image_info.latents_npz, flip_aug
+                    ):
+                        print(
+                            f"Skipping {image_info.latents_npz} because it already exists."
+                        )
                         continue
 
                 image_infos.append(image_info)
 
             if len(image_infos) > 0:
-                train_util.cache_batch_latents(vae, True, image_infos, flip_aug, random_crop)
+                train_util.cache_batch_latents(
+                    vae, True, image_infos, flip_aug, random_crop
+                )
 
     accelerator.wait_for_everyone()
-    accelerator.print(f"Finished caching latents for {len(train_dataset_group)} batches.")
+    accelerator.print(
+        f"Finished caching latents for {len(train_dataset_group)} batches."
+    )
 
 
 def setup_parser() -> argparse.ArgumentParser:
@@ -171,7 +197,9 @@ def setup_parser() -> argparse.ArgumentParser:
     train_util.add_training_arguments(parser, True)
     train_util.add_dataset_arguments(parser, True, True, True)
     config_util.add_config_arguments(parser)
-    parser.add_argument("--sdxl", action="store_true", help="Use SDXL model / SDXLモデルを使用する")
+    parser.add_argument(
+        "--sdxl", action="store_true", help="Use SDXL model / SDXLモデルを使用する"
+    )
     parser.add_argument(
         "--no_half_vae",
         action="store_true",

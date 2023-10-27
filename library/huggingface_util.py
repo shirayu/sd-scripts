@@ -6,7 +6,9 @@ import os
 from library.utils import fire_in_thread
 
 
-def exists_repo(repo_id: str, repo_type: str, revision: str = "main", token: str = None):
+def exists_repo(
+    repo_id: str, repo_type: str, revision: str = "main", token: str = None
+):
     api = HfApi(
         token=token,
     )
@@ -26,18 +28,29 @@ def upload(
     repo_id = args.huggingface_repo_id
     repo_type = args.huggingface_repo_type
     token = args.huggingface_token
-    path_in_repo = args.huggingface_path_in_repo + dest_suffix if args.huggingface_path_in_repo is not None else None
-    private = args.huggingface_repo_visibility is None or args.huggingface_repo_visibility != "public"
+    path_in_repo = (
+        args.huggingface_path_in_repo + dest_suffix
+        if args.huggingface_path_in_repo is not None
+        else None
+    )
+    private = (
+        args.huggingface_repo_visibility is None
+        or args.huggingface_repo_visibility != "public"
+    )
     api = HfApi(token=token)
     if not exists_repo(repo_id=repo_id, repo_type=repo_type, token=token):
         try:
             api.create_repo(repo_id=repo_id, repo_type=repo_type, private=private)
         except Exception as e:  # とりあえずRepositoryNotFoundErrorは確認したが他にあると困るので
             print("===========================================")
-            print(f"failed to create HuggingFace repo / HuggingFaceのリポジトリの作成に失敗しました : {e}")
+            print(
+                f"failed to create HuggingFace repo / HuggingFaceのリポジトリの作成に失敗しました : {e}"
+            )
             print("===========================================")
 
-    is_folder = (type(src) == str and os.path.isdir(src)) or (isinstance(src, Path) and src.is_dir())
+    is_folder = (type(src) == str and os.path.isdir(src)) or (
+        isinstance(src, Path) and src.is_dir()
+    )
 
     def uploader():
         try:
@@ -77,5 +90,7 @@ def list_dir(
         token=token,
     )
     repo_info = api.repo_info(repo_id=repo_id, revision=revision, repo_type=repo_type)
-    file_list = [file for file in repo_info.siblings if file.rfilename.startswith(subfolder)]
+    file_list = [
+        file for file in repo_info.siblings if file.rfilename.startswith(subfolder)
+    ]
     return file_list

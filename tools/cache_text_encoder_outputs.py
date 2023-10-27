@@ -46,7 +46,9 @@ def cache_to_disk(args: argparse.Namespace) -> None:
 
     # データセットを準備する
     if args.dataset_class is None:
-        blueprint_generator = BlueprintGenerator(ConfigSanitizer(True, True, False, True))
+        blueprint_generator = BlueprintGenerator(
+            ConfigSanitizer(True, True, False, True)
+        )
         if args.dataset_config is not None:
             print(f"Load dataset config from {args.dataset_config}")
             user_config = config_util.load_user_config(args.dataset_config)
@@ -84,14 +86,20 @@ def cache_to_disk(args: argparse.Namespace) -> None:
                     ]
                 }
 
-        blueprint = blueprint_generator.generate(user_config, args, tokenizer=tokenizers)
-        train_dataset_group = config_util.generate_dataset_group_by_blueprint(blueprint.dataset_group)
+        blueprint = blueprint_generator.generate(
+            user_config, args, tokenizer=tokenizers
+        )
+        train_dataset_group = config_util.generate_dataset_group_by_blueprint(
+            blueprint.dataset_group
+        )
     else:
         train_dataset_group = train_util.load_arbitrary_dataset(args, tokenizers)
 
     current_epoch = Value("i", 0)
     current_step = Value("i", 0)
-    ds_for_collator = train_dataset_group if args.max_data_loader_n_workers == 0 else None
+    ds_for_collator = (
+        train_dataset_group if args.max_data_loader_n_workers == 0 else None
+    )
     collator = train_util.collator_class(current_epoch, current_step, ds_for_collator)
 
     # acceleratorを準備する
@@ -104,10 +112,20 @@ def cache_to_disk(args: argparse.Namespace) -> None:
     # モデルを読み込む
     print("load model")
     if args.sdxl:
-        (_, text_encoder1, text_encoder2, _, _, _, _) = sdxl_train_util.load_target_model(args, accelerator, "sdxl", weight_dtype)
+        (
+            _,
+            text_encoder1,
+            text_encoder2,
+            _,
+            _,
+            _,
+            _,
+        ) = sdxl_train_util.load_target_model(args, accelerator, "sdxl", weight_dtype)
         text_encoders = [text_encoder1, text_encoder2]
     else:
-        text_encoder1, _, _, _ = train_util.load_target_model(args, weight_dtype, accelerator)
+        text_encoder1, _, _, _ = train_util.load_target_model(
+            args, weight_dtype, accelerator
+        )
         text_encoders = [text_encoder1]
 
     for text_encoder in text_encoders:
@@ -119,7 +137,9 @@ def cache_to_disk(args: argparse.Namespace) -> None:
     train_dataset_group.set_caching_mode("text")
 
     # DataLoaderのプロセス数：0はメインプロセスになる
-    n_workers = min(args.max_data_loader_n_workers, os.cpu_count() - 1)  # cpu_count-1 ただし最大で指定された数まで
+    n_workers = min(
+        args.max_data_loader_n_workers, os.cpu_count() - 1
+    )  # cpu_count-1 ただし最大で指定された数まで
 
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset_group,
@@ -140,29 +160,51 @@ def cache_to_disk(args: argparse.Namespace) -> None:
         input_ids2_list = batch["input_ids2_list"]
 
         image_infos = []
-        for absolute_path, input_ids1, input_ids2 in zip(absolute_paths, input_ids1_list, input_ids2_list):
-            image_info = train_util.ImageInfo(absolute_path, 1, "dummy", False, absolute_path)
-            image_info.text_encoder_outputs_npz = os.path.splitext(absolute_path)[0] + train_util.TEXT_ENCODER_OUTPUTS_CACHE_SUFFIX
+        for absolute_path, input_ids1, input_ids2 in zip(
+            absolute_paths, input_ids1_list, input_ids2_list
+        ):
+            image_info = train_util.ImageInfo(
+                absolute_path, 1, "dummy", False, absolute_path
+            )
+            image_info.text_encoder_outputs_npz = (
+                os.path.splitext(absolute_path)[0]
+                + train_util.TEXT_ENCODER_OUTPUTS_CACHE_SUFFIX
+            )
             image_info
 
             if args.skip_existing:
                 if os.path.exists(image_info.text_encoder_outputs_npz):
-                    print(f"Skipping {image_info.text_encoder_outputs_npz} because it already exists.")
+                    print(
+                        f"Skipping {image_info.text_encoder_outputs_npz} because it already exists."
+                    )
                     continue
-                
+
             image_info.input_ids1 = input_ids1
             image_info.input_ids2 = input_ids2
             image_infos.append(image_info)
 
         if len(image_infos) > 0:
-            b_input_ids1 = torch.stack([image_info.input_ids1 for image_info in image_infos])
-            b_input_ids2 = torch.stack([image_info.input_ids2 for image_info in image_infos])
+            b_input_ids1 = torch.stack(
+                [image_info.input_ids1 for image_info in image_infos]
+            )
+            b_input_ids2 = torch.stack(
+                [image_info.input_ids2 for image_info in image_infos]
+            )
             train_util.cache_batch_text_encoder_outputs(
-                image_infos, tokenizers, text_encoders, args.max_token_length, True, b_input_ids1, b_input_ids2, weight_dtype
+                image_infos,
+                tokenizers,
+                text_encoders,
+                args.max_token_length,
+                True,
+                b_input_ids1,
+                b_input_ids2,
+                weight_dtype,
             )
 
     accelerator.wait_for_everyone()
-    accelerator.print(f"Finished caching latents for {len(train_dataset_group)} batches.")
+    accelerator.print(
+        f"Finished caching latents for {len(train_dataset_group)} batches."
+    )
 
 
 def setup_parser() -> argparse.ArgumentParser:
@@ -173,7 +215,9 @@ def setup_parser() -> argparse.ArgumentParser:
     train_util.add_dataset_arguments(parser, True, True, True)
     config_util.add_config_arguments(parser)
     sdxl_train_util.add_sdxl_training_arguments(parser)
-    parser.add_argument("--sdxl", action="store_true", help="Use SDXL model / SDXLモデルを使用する")
+    parser.add_argument(
+        "--sdxl", action="store_true", help="Use SDXL model / SDXLモデルを使用する"
+    )
     parser.add_argument(
         "--skip_existing",
         action="store_true",

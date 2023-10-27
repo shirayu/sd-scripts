@@ -2,7 +2,12 @@ import torch
 from accelerate import init_empty_weights
 from accelerate.utils.modeling import set_module_tensor_to_device
 from safetensors.torch import load_file, save_file
-from transformers import CLIPTextModel, CLIPTextConfig, CLIPTextModelWithProjection, CLIPTokenizer
+from transformers import (
+    CLIPTextModel,
+    CLIPTextConfig,
+    CLIPTextModelWithProjection,
+    CLIPTokenizer,
+)
 from typing import List
 from diffusers import AutoencoderKL, EulerDiscreteScheduler, UNet2DConditionModel
 from library import model_util
@@ -89,13 +94,17 @@ def convert_sdxl_text_encoder_2_checkpoint(checkpoint, max_length):
             else:
                 raise ValueError(f"unexpected key in SD: {key}")
         elif ".positional_embedding" in key:
-            key = key.replace(".positional_embedding", ".embeddings.position_embedding.weight")
+            key = key.replace(
+                ".positional_embedding", ".embeddings.position_embedding.weight"
+            )
         elif ".text_projection" in key:
             key = key.replace("text_model.text_projection", "text_projection.weight")
         elif ".logit_scale" in key:
             key = None  # 後で処理する
         elif ".token_embedding" in key:
-            key = key.replace(".token_embedding.weight", ".embeddings.token_embedding.weight")
+            key = key.replace(
+                ".token_embedding.weight", ".embeddings.token_embedding.weight"
+            )
         elif ".ln_final" in key:
             key = key.replace(".ln_final", ".final_layer_norm")
         # ckpt from comfy has this key: text_model.encoder.text_model.embeddings.position_ids
@@ -118,7 +127,9 @@ def convert_sdxl_text_encoder_2_checkpoint(checkpoint, max_length):
             values = torch.chunk(checkpoint[key], 3)
 
             key_suffix = ".weight" if "weight" in key else ".bias"
-            key_pfx = key.replace(SDXL_KEY_PREFIX + "transformer.resblocks.", "text_model.encoder.layers.")
+            key_pfx = key.replace(
+                SDXL_KEY_PREFIX + "transformer.resblocks.", "text_model.encoder.layers."
+            )
             key_pfx = key_pfx.replace("_weight", "")
             key_pfx = key_pfx.replace("_bias", "")
             key_pfx = key_pfx.replace(".attn.in_proj", ".self_attn.")
@@ -145,20 +156,38 @@ def _load_state_dict_on_device(model, state_dict, device, dtype=None):
     # similar to model.load_state_dict()
     if not missing_keys and not unexpected_keys:
         for k in list(state_dict.keys()):
-            set_module_tensor_to_device(model, k, device, value=state_dict.pop(k), dtype=dtype)
+            set_module_tensor_to_device(
+                model, k, device, value=state_dict.pop(k), dtype=dtype
+            )
         return "<All keys matched successfully>"
 
     # error_msgs
     error_msgs: List[str] = []
     if missing_keys:
-        error_msgs.insert(0, "Missing key(s) in state_dict: {}. ".format(", ".join('"{}"'.format(k) for k in missing_keys)))
+        error_msgs.insert(
+            0,
+            "Missing key(s) in state_dict: {}. ".format(
+                ", ".join('"{}"'.format(k) for k in missing_keys)
+            ),
+        )
     if unexpected_keys:
-        error_msgs.insert(0, "Unexpected key(s) in state_dict: {}. ".format(", ".join('"{}"'.format(k) for k in unexpected_keys)))
+        error_msgs.insert(
+            0,
+            "Unexpected key(s) in state_dict: {}. ".format(
+                ", ".join('"{}"'.format(k) for k in unexpected_keys)
+            ),
+        )
 
-    raise RuntimeError("Error(s) in loading state_dict for {}:\n\t{}".format(model.__class__.__name__, "\n\t".join(error_msgs)))
+    raise RuntimeError(
+        "Error(s) in loading state_dict for {}:\n\t{}".format(
+            model.__class__.__name__, "\n\t".join(error_msgs)
+        )
+    )
 
 
-def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dtype=None):
+def load_models_from_sdxl_checkpoint(
+    model_version, ckpt_path, map_location, dtype=None
+):
     # model_version is reserved for future use
     # dtype is used for full_fp16/bf16 integration. Text Encoder will remain fp32, because it runs on CPU when caching
 
@@ -255,19 +284,27 @@ def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dty
     te2_sd = {}
     for k in list(state_dict.keys()):
         if k.startswith("conditioner.embedders.0.transformer."):
-            te1_sd[k.replace("conditioner.embedders.0.transformer.", "")] = state_dict.pop(k)
+            te1_sd[
+                k.replace("conditioner.embedders.0.transformer.", "")
+            ] = state_dict.pop(k)
         elif k.startswith("conditioner.embedders.1.model."):
             te2_sd[k] = state_dict.pop(k)
-    
+
     # 一部のposition_idsがないモデルへの対応 / add position_ids for some models
     if "text_model.embeddings.position_ids" not in te1_sd:
         te1_sd["text_model.embeddings.position_ids"] = torch.arange(77).unsqueeze(0)
 
-    info1 = _load_state_dict_on_device(text_model1, te1_sd, device=map_location)  # remain fp32
+    info1 = _load_state_dict_on_device(
+        text_model1, te1_sd, device=map_location
+    )  # remain fp32
     print("text encoder 1:", info1)
 
-    converted_sd, logit_scale = convert_sdxl_text_encoder_2_checkpoint(te2_sd, max_length=77)
-    info2 = _load_state_dict_on_device(text_model2, converted_sd, device=map_location)  # remain fp32
+    converted_sd, logit_scale = convert_sdxl_text_encoder_2_checkpoint(
+        te2_sd, max_length=77
+    )
+    info2 = _load_state_dict_on_device(
+        text_model2, converted_sd, device=map_location
+    )  # remain fp32
     print("text encoder 2:", info2)
 
     # prepare vae
@@ -277,8 +314,12 @@ def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dty
         vae = AutoencoderKL(**vae_config)
 
     print("loading VAE from checkpoint")
-    converted_vae_checkpoint = model_util.convert_ldm_vae_checkpoint(state_dict, vae_config)
-    info = _load_state_dict_on_device(vae, converted_vae_checkpoint, device=map_location, dtype=dtype)
+    converted_vae_checkpoint = model_util.convert_ldm_vae_checkpoint(
+        state_dict, vae_config
+    )
+    info = _load_state_dict_on_device(
+        vae, converted_vae_checkpoint, device=map_location, dtype=dtype
+    )
     print("VAE:", info)
 
     ckpt_info = (epoch, global_step) if epoch is not None else None
@@ -300,7 +341,9 @@ def make_unet_conversion_map():
                 # no attention layers in down_blocks.3
                 hf_down_atn_prefix = f"down_blocks.{i}.attentions.{j}."
                 sd_down_atn_prefix = f"input_blocks.{3*i + j + 1}.1."
-                unet_conversion_map_layer.append((sd_down_atn_prefix, hf_down_atn_prefix))
+                unet_conversion_map_layer.append(
+                    (sd_down_atn_prefix, hf_down_atn_prefix)
+                )
 
         for j in range(3):
             # loop over resnets/attentions for upblocks
@@ -318,7 +361,9 @@ def make_unet_conversion_map():
             # no downsample in down_blocks.3
             hf_downsample_prefix = f"down_blocks.{i}.downsamplers.0.conv."
             sd_downsample_prefix = f"input_blocks.{3*(i+1)}.0.op."
-            unet_conversion_map_layer.append((sd_downsample_prefix, hf_downsample_prefix))
+            unet_conversion_map_layer.append(
+                (sd_downsample_prefix, hf_downsample_prefix)
+            )
 
             # no upsample in up_blocks.3
             hf_upsample_prefix = f"up_blocks.{i}.upsamplers.0."
@@ -425,9 +470,13 @@ def convert_text_encoder_2_state_dict_to_sdxl(checkpoint, logit_scale):
             else:
                 raise ValueError(f"unexpected key in DiffUsers model: {key}")
         elif ".position_embedding" in key:
-            key = key.replace("embeddings.position_embedding.weight", "positional_embedding")
+            key = key.replace(
+                "embeddings.position_embedding.weight", "positional_embedding"
+            )
         elif ".token_embedding" in key:
-            key = key.replace("embeddings.token_embedding.weight", "token_embedding.weight")
+            key = key.replace(
+                "embeddings.token_embedding.weight", "token_embedding.weight"
+            )
         elif "text_projection" in key:  # no dot in key
             key = key.replace("text_projection.weight", "text_projection")
         elif "final_layer_norm" in key:
@@ -455,7 +504,9 @@ def convert_text_encoder_2_state_dict_to_sdxl(checkpoint, logit_scale):
             value_v = checkpoint[key_v]
             value = torch.cat([value_q, value_k, value_v])
 
-            new_key = key.replace("text_model.encoder.layers.", "transformer.resblocks.")
+            new_key = key.replace(
+                "text_model.encoder.layers.", "transformer.resblocks."
+            )
             new_key = new_key.replace(".self_attn.q_proj.", ".attn.in_proj_")
             new_sd[new_key] = value
 
@@ -493,7 +544,9 @@ def save_stable_diffusion_checkpoint(
     # Convert the text encoders
     update_sd("conditioner.embedders.0.transformer.", text_encoder1.state_dict())
 
-    text_enc2_dict = convert_text_encoder_2_state_dict_to_sdxl(text_encoder2.state_dict(), logit_scale)
+    text_enc2_dict = convert_text_encoder_2_state_dict_to_sdxl(
+        text_encoder2.state_dict(), logit_scale
+    )
     update_sd("conditioner.embedders.1.model.", text_enc2_dict)
 
     # Convert the VAE
@@ -521,7 +574,14 @@ def save_stable_diffusion_checkpoint(
 
 
 def save_diffusers_checkpoint(
-    output_dir, text_encoder1, text_encoder2, unet, pretrained_model_name_or_path, vae=None, use_safetensors=False, save_dtype=None
+    output_dir,
+    text_encoder1,
+    text_encoder2,
+    unet,
+    pretrained_model_name_or_path,
+    vae=None,
+    use_safetensors=False,
+    save_dtype=None,
 ):
     from diffusers import StableDiffusionXLPipeline
 
@@ -538,11 +598,19 @@ def save_diffusers_checkpoint(
     if pretrained_model_name_or_path is None:
         pretrained_model_name_or_path = DIFFUSERS_REF_MODEL_ID_SDXL
 
-    scheduler = EulerDiscreteScheduler.from_pretrained(pretrained_model_name_or_path, subfolder="scheduler")
-    tokenizer1 = CLIPTokenizer.from_pretrained(pretrained_model_name_or_path, subfolder="tokenizer")
-    tokenizer2 = CLIPTokenizer.from_pretrained(pretrained_model_name_or_path, subfolder="tokenizer_2")
+    scheduler = EulerDiscreteScheduler.from_pretrained(
+        pretrained_model_name_or_path, subfolder="scheduler"
+    )
+    tokenizer1 = CLIPTokenizer.from_pretrained(
+        pretrained_model_name_or_path, subfolder="tokenizer"
+    )
+    tokenizer2 = CLIPTokenizer.from_pretrained(
+        pretrained_model_name_or_path, subfolder="tokenizer_2"
+    )
     if vae is None:
-        vae = AutoencoderKL.from_pretrained(pretrained_model_name_or_path, subfolder="vae")
+        vae = AutoencoderKL.from_pretrained(
+            pretrained_model_name_or_path, subfolder="vae"
+        )
 
     # prevent local path from being saved
     def remove_name_or_path(model):

@@ -8,7 +8,9 @@ from accelerate import init_empty_weights
 from tqdm import tqdm
 from transformers import CLIPTokenizer
 from library import model_util, sdxl_model_util, train_util, sdxl_original_unet
-from library.sdxl_lpw_stable_diffusion import SdxlStableDiffusionLongPromptWeightingPipeline
+from library.sdxl_lpw_stable_diffusion import (
+    SdxlStableDiffusionLongPromptWeightingPipeline,
+)
 
 TOKENIZER1_PATH = "openai/clip-vit-large-patch14"
 TOKENIZER2_PATH = "laion/CLIP-ViT-bigG-14-laion2B-39B-b160k"
@@ -21,7 +23,9 @@ def load_target_model(args, accelerator, model_version: str, weight_dtype):
     model_dtype = match_mixed_precision(args, weight_dtype)  # prepare fp16/bf16
     for pi in range(accelerator.state.num_processes):
         if pi == accelerator.state.local_process_index:
-            print(f"loading model for process {accelerator.state.local_process_index}/{accelerator.state.num_processes}")
+            print(
+                f"loading model for process {accelerator.state.local_process_index}/{accelerator.state.num_processes}"
+            )
 
             (
                 load_stable_diffusion_format,
@@ -51,17 +55,36 @@ def load_target_model(args, accelerator, model_version: str, weight_dtype):
             torch.cuda.empty_cache()
         accelerator.wait_for_everyone()
 
-    text_encoder1, text_encoder2, unet = train_util.transform_models_if_DDP([text_encoder1, text_encoder2, unet])
+    text_encoder1, text_encoder2, unet = train_util.transform_models_if_DDP(
+        [text_encoder1, text_encoder2, unet]
+    )
 
-    return load_stable_diffusion_format, text_encoder1, text_encoder2, vae, unet, logit_scale, ckpt_info
+    return (
+        load_stable_diffusion_format,
+        text_encoder1,
+        text_encoder2,
+        vae,
+        unet,
+        logit_scale,
+        ckpt_info,
+    )
 
 
 def _load_target_model(
-    name_or_path: str, vae_path: Optional[str], model_version: str, weight_dtype, device="cpu", model_dtype=None
+    name_or_path: str,
+    vae_path: Optional[str],
+    model_version: str,
+    weight_dtype,
+    device="cpu",
+    model_dtype=None,
 ):
     # model_dtype only work with full fp16/bf16
-    name_or_path = os.readlink(name_or_path) if os.path.islink(name_or_path) else name_or_path
-    load_stable_diffusion_format = os.path.isfile(name_or_path)  # determine SD or Diffusers
+    name_or_path = (
+        os.readlink(name_or_path) if os.path.islink(name_or_path) else name_or_path
+    )
+    load_stable_diffusion_format = os.path.isfile(
+        name_or_path
+    )  # determine SD or Diffusers
 
     if load_stable_diffusion_format:
         print(f"load StableDiffusion checkpoint: {name_or_path}")
@@ -72,7 +95,9 @@ def _load_target_model(
             unet,
             logit_scale,
             ckpt_info,
-        ) = sdxl_model_util.load_models_from_sdxl_checkpoint(model_version, name_or_path, device, model_dtype)
+        ) = sdxl_model_util.load_models_from_sdxl_checkpoint(
+            model_version, name_or_path, device, model_dtype
+        )
     else:
         # Diffusers model is loaded to CPU
         from diffusers import StableDiffusionXLPipeline
@@ -82,12 +107,17 @@ def _load_target_model(
         try:
             try:
                 pipe = StableDiffusionXLPipeline.from_pretrained(
-                    name_or_path, torch_dtype=model_dtype, variant=variant, tokenizer=None
+                    name_or_path,
+                    torch_dtype=model_dtype,
+                    variant=variant,
+                    tokenizer=None,
                 )
             except EnvironmentError as ex:
                 if variant is not None:
                     print("try to load fp32 model")
-                    pipe = StableDiffusionXLPipeline.from_pretrained(name_or_path, variant=None, tokenizer=None)
+                    pipe = StableDiffusionXLPipeline.from_pretrained(
+                        name_or_path, variant=None, tokenizer=None
+                    )
                 else:
                     raise ex
         except EnvironmentError as ex:
@@ -110,10 +140,14 @@ def _load_target_model(
         del pipe
 
         # Diffusers U-Net to original U-Net
-        state_dict = sdxl_model_util.convert_diffusers_unet_state_dict_to_sdxl(unet.state_dict())
+        state_dict = sdxl_model_util.convert_diffusers_unet_state_dict_to_sdxl(
+            unet.state_dict()
+        )
         with init_empty_weights():
             unet = sdxl_original_unet.SdxlUNet2DConditionModel()  # overwrite unet
-        sdxl_model_util._load_state_dict_on_device(unet, state_dict, device=device, dtype=model_dtype)
+        sdxl_model_util._load_state_dict_on_device(
+            unet, state_dict, device=device, dtype=model_dtype
+        )
         print("U-Net converted to original U-Net")
 
         logit_scale = None
@@ -124,7 +158,15 @@ def _load_target_model(
         vae = model_util.load_vae(vae_path, weight_dtype)
         print("additional VAE loaded")
 
-    return load_stable_diffusion_format, text_encoder1, text_encoder2, vae, unet, logit_scale, ckpt_info
+    return (
+        load_stable_diffusion_format,
+        text_encoder1,
+        text_encoder2,
+        vae,
+        unet,
+        logit_scale,
+        ckpt_info,
+    )
 
 
 def load_tokenizers(args: argparse.Namespace):
@@ -135,7 +177,9 @@ def load_tokenizers(args: argparse.Namespace):
     for i, original_path in enumerate(original_paths):
         tokenizer: CLIPTokenizer = None
         if args.tokenizer_cache_dir:
-            local_tokenizer_path = os.path.join(args.tokenizer_cache_dir, original_path.replace("/", "_"))
+            local_tokenizer_path = os.path.join(
+                args.tokenizer_cache_dir, original_path.replace("/", "_")
+            )
             if os.path.exists(local_tokenizer_path):
                 print(f"load tokenizer from cache: {local_tokenizer_path}")
                 tokenizer = CLIPTokenizer.from_pretrained(local_tokenizer_path)
@@ -148,7 +192,9 @@ def load_tokenizers(args: argparse.Namespace):
             tokenizer.save_pretrained(local_tokenizer_path)
 
         if i == 1:
-            tokenizer.pad_token_id = 0  # fix pad token id to make same as open clip tokenizer
+            tokenizer.pad_token_id = (
+                0  # fix pad token id to make same as open clip tokenizer
+            )
 
         tokeniers.append(tokenizer)
 
@@ -183,9 +229,11 @@ def timestep_embedding(timesteps, dim, max_period=10000):
     :return: an [N x dim] Tensor of positional embeddings.
     """
     half = dim // 2
-    freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half).to(
-        device=timesteps.device
-    )
+    freqs = torch.exp(
+        -math.log(max_period)
+        * torch.arange(start=0, end=half, dtype=torch.float32)
+        / half
+    ).to(device=timesteps.device)
     args = timesteps[:, None].float() * freqs[None]
     embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
     if dim % 2:
@@ -226,7 +274,9 @@ def save_sd_model_on_train_end(
     ckpt_info,
 ):
     def sd_saver(ckpt_file, epoch_no, global_step):
-        sai_metadata = train_util.get_sai_model_spec(None, args, True, False, False, is_stable_diffusion_ckpt=True)
+        sai_metadata = train_util.get_sai_model_spec(
+            None, args, True, False, False, is_stable_diffusion_ckpt=True
+        )
         sdxl_model_util.save_stable_diffusion_checkpoint(
             ckpt_file,
             text_encoder1,
@@ -254,7 +304,13 @@ def save_sd_model_on_train_end(
         )
 
     train_util.save_sd_model_on_train_end_common(
-        args, save_stable_diffusion_format, use_safetensors, epoch, global_step, sd_saver, diffusers_saver
+        args,
+        save_stable_diffusion_format,
+        use_safetensors,
+        epoch,
+        global_step,
+        sd_saver,
+        diffusers_saver,
     )
 
 
@@ -279,7 +335,9 @@ def save_sd_model_on_epoch_end_or_stepwise(
     ckpt_info,
 ):
     def sd_saver(ckpt_file, epoch_no, global_step):
-        sai_metadata = train_util.get_sai_model_spec(None, args, True, False, False, is_stable_diffusion_ckpt=True)
+        sai_metadata = train_util.get_sai_model_spec(
+            None, args, True, False, False, is_stable_diffusion_ckpt=True
+        )
         sdxl_model_util.save_stable_diffusion_checkpoint(
             ckpt_file,
             text_encoder1,
@@ -322,7 +380,9 @@ def save_sd_model_on_epoch_end_or_stepwise(
 
 def add_sdxl_training_arguments(parser: argparse.ArgumentParser):
     parser.add_argument(
-        "--cache_text_encoder_outputs", action="store_true", help="cache text encoder outputs / text encoderの出力をキャッシュする"
+        "--cache_text_encoder_outputs",
+        action="store_true",
+        help="cache text encoder outputs / text encoderの出力をキャッシュする",
     )
     parser.add_argument(
         "--cache_text_encoder_outputs_to_disk",
@@ -331,10 +391,16 @@ def add_sdxl_training_arguments(parser: argparse.ArgumentParser):
     )
 
 
-def verify_sdxl_training_args(args: argparse.Namespace, supportTextEncoderCaching: bool = True):
-    assert not args.v2, "v2 cannot be enabled in SDXL training / SDXL学習ではv2を有効にすることはできません"
+def verify_sdxl_training_args(
+    args: argparse.Namespace, supportTextEncoderCaching: bool = True
+):
+    assert (
+        not args.v2
+    ), "v2 cannot be enabled in SDXL training / SDXL学習ではv2を有効にすることはできません"
     if args.v_parameterization:
-        print("v_parameterization will be unexpected / SDXL学習ではv_parameterizationは想定外の動作になります")
+        print(
+            "v_parameterization will be unexpected / SDXL学習ではv_parameterizationは想定外の動作になります"
+        )
 
     if args.clip_skip is not None:
         print("clip_skip will be unexpected / SDXL学習ではclip_skipは動作しません")
@@ -357,7 +423,10 @@ def verify_sdxl_training_args(args: argparse.Namespace, supportTextEncoderCachin
     ), "weighted_captions cannot be enabled in SDXL training currently / SDXL学習では今のところweighted_captionsを有効にすることはできません"
 
     if supportTextEncoderCaching:
-        if args.cache_text_encoder_outputs_to_disk and not args.cache_text_encoder_outputs:
+        if (
+            args.cache_text_encoder_outputs_to_disk
+            and not args.cache_text_encoder_outputs
+        ):
             args.cache_text_encoder_outputs = True
             print(
                 "cache_text_encoder_outputs is enabled because cache_text_encoder_outputs_to_disk is enabled / "
@@ -366,4 +435,6 @@ def verify_sdxl_training_args(args: argparse.Namespace, supportTextEncoderCachin
 
 
 def sample_images(*args, **kwargs):
-    return train_util.sample_images_common(SdxlStableDiffusionLongPromptWeightingPipeline, *args, **kwargs)
+    return train_util.sample_images_common(
+        SdxlStableDiffusionLongPromptWeightingPipeline, *args, **kwargs
+    )

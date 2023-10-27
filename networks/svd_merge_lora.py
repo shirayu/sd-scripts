@@ -51,9 +51,13 @@ def merge_lora_models(models, ratios, new_rank, new_conv_rank, device, merge_dty
 
         if lora_metadata is not None:
             if v2 is None:
-                v2 = lora_metadata.get(train_util.SS_METADATA_KEY_V2, None)  # return string
+                v2 = lora_metadata.get(
+                    train_util.SS_METADATA_KEY_V2, None
+                )  # return string
             if base_model is None:
-                base_model = lora_metadata.get(train_util.SS_METADATA_KEY_BASE_MODEL_VERSION, None)
+                base_model = lora_metadata.get(
+                    train_util.SS_METADATA_KEY_BASE_MODEL_VERSION, None
+                )
 
         # merge
         print(f"merging...")
@@ -77,7 +81,10 @@ def merge_lora_models(models, ratios, new_rank, new_conv_rank, device, merge_dty
 
             # make original weight if not exist
             if lora_module_name not in merged_sd:
-                weight = torch.zeros((out_dim, in_dim, *kernel_size) if conv2d else (out_dim, in_dim), dtype=merge_dtype)
+                weight = torch.zeros(
+                    (out_dim, in_dim, *kernel_size) if conv2d else (out_dim, in_dim),
+                    dtype=merge_dtype,
+                )
                 if device:
                     weight = weight.to(device)
             else:
@@ -100,11 +107,18 @@ def merge_lora_models(models, ratios, new_rank, new_conv_rank, device, merge_dty
                 weight = (
                     weight
                     + ratio
-                    * (up_weight.squeeze(3).squeeze(2) @ down_weight.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(3)
+                    * (
+                        up_weight.squeeze(3).squeeze(2)
+                        @ down_weight.squeeze(3).squeeze(2)
+                    )
+                    .unsqueeze(2)
+                    .unsqueeze(3)
                     * scale
                 )
             else:
-                conved = torch.nn.functional.conv2d(down_weight.permute(1, 0, 2, 3), up_weight).permute(1, 0, 2, 3)
+                conved = torch.nn.functional.conv2d(
+                    down_weight.permute(1, 0, 2, 3), up_weight
+                ).permute(1, 0, 2, 3)
                 weight = weight + ratio * conved * scale
 
             merged_sd[lora_module_name] = weight
@@ -126,7 +140,9 @@ def merge_lora_models(models, ratios, new_rank, new_conv_rank, device, merge_dty
                     mat = mat.squeeze()
 
             module_new_rank = new_conv_rank if conv2d_3x3 else new_rank
-            module_new_rank = min(module_new_rank, in_dim, out_dim)  # LoRA rank cannot exceed the original dim
+            module_new_rank = min(
+                module_new_rank, in_dim, out_dim
+            )  # LoRA rank cannot exceed the original dim
 
             U, S, Vh = torch.linalg.svd(mat)
 
@@ -150,8 +166,12 @@ def merge_lora_models(models, ratios, new_rank, new_conv_rank, device, merge_dty
             up_weight = U
             down_weight = Vh
 
-            merged_lora_sd[lora_module_name + ".lora_up.weight"] = up_weight.to("cpu").contiguous()
-            merged_lora_sd[lora_module_name + ".lora_down.weight"] = down_weight.to("cpu").contiguous()
+            merged_lora_sd[lora_module_name + ".lora_up.weight"] = up_weight.to(
+                "cpu"
+            ).contiguous()
+            merged_lora_sd[lora_module_name + ".lora_down.weight"] = down_weight.to(
+                "cpu"
+            ).contiguous()
             merged_lora_sd[lora_module_name + ".alpha"] = torch.tensor(module_new_rank)
 
     # build minimum metadata
@@ -161,13 +181,17 @@ def merge_lora_models(models, ratios, new_rank, new_conv_rank, device, merge_dty
         network_args = {"conv_dim": new_conv_rank, "conv_alpha": new_conv_rank}
     else:
         network_args = None
-    metadata = train_util.build_minimum_network_metadata(v2, base_model, "networks.lora", dims, alphas, network_args)
+    metadata = train_util.build_minimum_network_metadata(
+        v2, base_model, "networks.lora", dims, alphas, network_args
+    )
 
     return merged_lora_sd, metadata, v2 == "True", base_model
 
 
 def merge(args):
-    assert len(args.models) == len(args.ratios), f"number of models must be equal to number of ratios / モデルの数と重みの数は合わせてください"
+    assert len(args.models) == len(
+        args.ratios
+    ), f"number of models must be equal to number of ratios / モデルの数と重みの数は合わせてください"
 
     def str_to_dtype(p):
         if p == "float":
@@ -183,14 +207,18 @@ def merge(args):
     if save_dtype is None:
         save_dtype = merge_dtype
 
-    new_conv_rank = args.new_conv_rank if args.new_conv_rank is not None else args.new_rank
+    new_conv_rank = (
+        args.new_conv_rank if args.new_conv_rank is not None else args.new_rank
+    )
     state_dict, metadata, v2, base_model = merge_lora_models(
         args.models, args.ratios, args.new_rank, new_conv_rank, args.device, merge_dtype
     )
 
     print(f"calculating hashes and creating metadata...")
 
-    model_hash, legacy_hash = train_util.precalculate_safetensors_hashes(state_dict, metadata)
+    model_hash, legacy_hash = train_util.precalculate_safetensors_hashes(
+        state_dict, metadata
+    )
     metadata["sshs_model_hash"] = model_hash
     metadata["sshs_legacy_hash"] = legacy_hash
 
@@ -199,7 +227,15 @@ def merge(args):
         merged_from = sai_model_spec.build_merged_from(args.models)
         title = os.path.splitext(os.path.basename(args.save_to))[0]
         sai_metadata = sai_model_spec.build_metadata(
-            state_dict, v2, v2, is_sdxl, True, False, time.time(), title=title, merged_from=merged_from
+            state_dict,
+            v2,
+            v2,
+            is_sdxl,
+            True,
+            False,
+            time.time(),
+            title=title,
+            merged_from=merged_from,
         )
         if v2:
             # TODO read sai modelspec
@@ -229,20 +265,41 @@ def setup_parser() -> argparse.ArgumentParser:
         help="precision in merging (float is recommended) / マージの計算時の精度（floatを推奨）",
     )
     parser.add_argument(
-        "--save_to", type=str, default=None, help="destination file name: ckpt or safetensors file / 保存先のファイル名、ckptまたはsafetensors"
+        "--save_to",
+        type=str,
+        default=None,
+        help="destination file name: ckpt or safetensors file / 保存先のファイル名、ckptまたはsafetensors",
     )
     parser.add_argument(
-        "--models", type=str, nargs="*", help="LoRA models to merge: ckpt or safetensors file / マージするLoRAモデル、ckptまたはsafetensors"
+        "--models",
+        type=str,
+        nargs="*",
+        help="LoRA models to merge: ckpt or safetensors file / マージするLoRAモデル、ckptまたはsafetensors",
     )
-    parser.add_argument("--ratios", type=float, nargs="*", help="ratios for each model / それぞれのLoRAモデルの比率")
-    parser.add_argument("--new_rank", type=int, default=4, help="Specify rank of output LoRA / 出力するLoRAのrank (dim)")
+    parser.add_argument(
+        "--ratios",
+        type=float,
+        nargs="*",
+        help="ratios for each model / それぞれのLoRAモデルの比率",
+    )
+    parser.add_argument(
+        "--new_rank",
+        type=int,
+        default=4,
+        help="Specify rank of output LoRA / 出力するLoRAのrank (dim)",
+    )
     parser.add_argument(
         "--new_conv_rank",
         type=int,
         default=None,
         help="Specify rank of output LoRA for Conv2d 3x3, None for same as new_rank / 出力するConv2D 3x3 LoRAのrank (dim)、Noneでnew_rankと同じ",
     )
-    parser.add_argument("--device", type=str, default=None, help="device to use, cuda for GPU / 計算を行うデバイス、cuda でGPUを使う")
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="device to use, cuda for GPU / 計算を行うデバイス、cuda でGPUを使う",
+    )
     parser.add_argument(
         "--no_metadata",
         action="store_true",

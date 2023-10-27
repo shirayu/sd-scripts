@@ -3,10 +3,13 @@ import os
 
 import regex
 import torch
+
 try:
     import intel_extension_for_pytorch as ipex
+
     if torch.xpu.is_available():
         from library.ipex import ipex_init
+
         ipex_init()
 except Exception:
     pass
@@ -37,25 +40,41 @@ class SdxlTextualInversionTrainer(train_textual_inversion.TextualInversionTraine
             unet,
             logit_scale,
             ckpt_info,
-        ) = sdxl_train_util.load_target_model(args, accelerator, sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0, weight_dtype)
+        ) = sdxl_train_util.load_target_model(
+            args,
+            accelerator,
+            sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0,
+            weight_dtype,
+        )
 
         self.load_stable_diffusion_format = load_stable_diffusion_format
         self.logit_scale = logit_scale
         self.ckpt_info = ckpt_info
 
-        return sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0, [text_encoder1, text_encoder2], vae, unet
+        return (
+            sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0,
+            [text_encoder1, text_encoder2],
+            vae,
+            unet,
+        )
 
     def load_tokenizer(self, args):
         tokenizer = sdxl_train_util.load_tokenizers(args)
         return tokenizer
 
-    def get_text_cond(self, args, accelerator, batch, tokenizers, text_encoders, weight_dtype):
+    def get_text_cond(
+        self, args, accelerator, batch, tokenizers, text_encoders, weight_dtype
+    ):
         input_ids1 = batch["input_ids"]
         input_ids2 = batch["input_ids2"]
         with torch.enable_grad():
             input_ids1 = input_ids1.to(accelerator.device)
             input_ids2 = input_ids2.to(accelerator.device)
-            encoder_hidden_states1, encoder_hidden_states2, pool2 = train_util.get_hidden_states_sdxl(
+            (
+                encoder_hidden_states1,
+                encoder_hidden_states2,
+                pool2,
+            ) = train_util.get_hidden_states_sdxl(
                 args.max_token_length,
                 input_ids1,
                 input_ids2,
@@ -67,26 +86,63 @@ class SdxlTextualInversionTrainer(train_textual_inversion.TextualInversionTraine
             )
         return encoder_hidden_states1, encoder_hidden_states2, pool2
 
-    def call_unet(self, args, accelerator, unet, noisy_latents, timesteps, text_conds, batch, weight_dtype):
-        noisy_latents = noisy_latents.to(weight_dtype)  # TODO check why noisy_latents is not weight_dtype
+    def call_unet(
+        self,
+        args,
+        accelerator,
+        unet,
+        noisy_latents,
+        timesteps,
+        text_conds,
+        batch,
+        weight_dtype,
+    ):
+        noisy_latents = noisy_latents.to(
+            weight_dtype
+        )  # TODO check why noisy_latents is not weight_dtype
 
         # get size embeddings
         orig_size = batch["original_sizes_hw"]
         crop_size = batch["crop_top_lefts"]
         target_size = batch["target_sizes_hw"]
-        embs = sdxl_train_util.get_size_embeddings(orig_size, crop_size, target_size, accelerator.device).to(weight_dtype)
+        embs = sdxl_train_util.get_size_embeddings(
+            orig_size, crop_size, target_size, accelerator.device
+        ).to(weight_dtype)
 
         # concat embeddings
         encoder_hidden_states1, encoder_hidden_states2, pool2 = text_conds
         vector_embedding = torch.cat([pool2, embs], dim=1).to(weight_dtype)
-        text_embedding = torch.cat([encoder_hidden_states1, encoder_hidden_states2], dim=2).to(weight_dtype)
+        text_embedding = torch.cat(
+            [encoder_hidden_states1, encoder_hidden_states2], dim=2
+        ).to(weight_dtype)
 
         noise_pred = unet(noisy_latents, timesteps, text_embedding, vector_embedding)
         return noise_pred
 
-    def sample_images(self, accelerator, args, epoch, global_step, device, vae, tokenizer, text_encoder, unet, prompt_replacement):
+    def sample_images(
+        self,
+        accelerator,
+        args,
+        epoch,
+        global_step,
+        device,
+        vae,
+        tokenizer,
+        text_encoder,
+        unet,
+        prompt_replacement,
+    ):
         sdxl_train_util.sample_images(
-            accelerator, args, epoch, global_step, device, vae, tokenizer, text_encoder, unet, prompt_replacement
+            accelerator,
+            args,
+            epoch,
+            global_step,
+            device,
+            vae,
+            tokenizer,
+            text_encoder,
+            unet,
+            prompt_replacement,
         )
 
     def save_weights(self, file, updated_embs, save_dtype, metadata):

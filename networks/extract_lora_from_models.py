@@ -50,20 +50,48 @@ def svd(args):
     # load models
     if not args.sdxl:
         print(f"loading original SD model : {args.model_org}")
-        text_encoder_o, _, unet_o = model_util.load_models_from_stable_diffusion_checkpoint(args.v2, args.model_org)
+        (
+            text_encoder_o,
+            _,
+            unet_o,
+        ) = model_util.load_models_from_stable_diffusion_checkpoint(
+            args.v2, args.model_org
+        )
         text_encoders_o = [text_encoder_o]
         print(f"loading tuned SD model : {args.model_tuned}")
-        text_encoder_t, _, unet_t = model_util.load_models_from_stable_diffusion_checkpoint(args.v2, args.model_tuned)
+        (
+            text_encoder_t,
+            _,
+            unet_t,
+        ) = model_util.load_models_from_stable_diffusion_checkpoint(
+            args.v2, args.model_tuned
+        )
         text_encoders_t = [text_encoder_t]
-        model_version = model_util.get_model_version_str_for_sd1_sd2(args.v2, args.v_parameterization)
+        model_version = model_util.get_model_version_str_for_sd1_sd2(
+            args.v2, args.v_parameterization
+        )
     else:
         print(f"loading original SDXL model : {args.model_org}")
-        text_encoder_o1, text_encoder_o2, _, unet_o, _, _ = sdxl_model_util.load_models_from_sdxl_checkpoint(
+        (
+            text_encoder_o1,
+            text_encoder_o2,
+            _,
+            unet_o,
+            _,
+            _,
+        ) = sdxl_model_util.load_models_from_sdxl_checkpoint(
             sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0, args.model_org, "cpu"
         )
         text_encoders_o = [text_encoder_o1, text_encoder_o2]
         print(f"loading original SDXL model : {args.model_tuned}")
-        text_encoder_t1, text_encoder_t2, _, unet_t, _, _ = sdxl_model_util.load_models_from_sdxl_checkpoint(
+        (
+            text_encoder_t1,
+            text_encoder_t2,
+            _,
+            unet_t,
+            _,
+            _,
+        ) = sdxl_model_util.load_models_from_sdxl_checkpoint(
             sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0, args.model_tuned, "cpu"
         )
         text_encoders_t = [text_encoder_t1, text_encoder_t2]
@@ -75,8 +103,12 @@ def svd(args):
     else:
         kwargs = {"conv_dim": args.conv_dim, "conv_alpha": args.conv_dim}
 
-    lora_network_o = lora.create_network(1.0, args.dim, args.dim, None, text_encoders_o, unet_o, **kwargs)
-    lora_network_t = lora.create_network(1.0, args.dim, args.dim, None, text_encoders_t, unet_t, **kwargs)
+    lora_network_o = lora.create_network(
+        1.0, args.dim, args.dim, None, text_encoders_o, unet_o, **kwargs
+    )
+    lora_network_t = lora.create_network(
+        1.0, args.dim, args.dim, None, text_encoders_t, unet_t, **kwargs
+    )
     assert len(lora_network_o.text_encoder_loras) == len(
         lora_network_t.text_encoder_loras
     ), f"model version is different (SD1.x vs SD2.x) / それぞれのモデルのバージョンが違います（SD1.xベースとSD2.xベース） "
@@ -84,7 +116,9 @@ def svd(args):
     # get diffs
     diffs = {}
     text_encoder_different = False
-    for i, (lora_o, lora_t) in enumerate(zip(lora_network_o.text_encoder_loras, lora_network_t.text_encoder_loras)):
+    for i, (lora_o, lora_t) in enumerate(
+        zip(lora_network_o.text_encoder_loras, lora_network_t.text_encoder_loras)
+    ):
         lora_name = lora_o.lora_name
         module_o = lora_o.org_module
         module_t = lora_t.org_module
@@ -93,7 +127,9 @@ def svd(args):
         # Text Encoder might be same
         if not text_encoder_different and torch.max(torch.abs(diff)) > MIN_DIFF:
             text_encoder_different = True
-            print(f"Text encoder is different. {torch.max(torch.abs(diff))} > {MIN_DIFF}")
+            print(
+                f"Text encoder is different. {torch.max(torch.abs(diff))} > {MIN_DIFF}"
+            )
 
         diff = diff.float()
         diffs[lora_name] = diff
@@ -103,7 +139,9 @@ def svd(args):
         lora_network_o.text_encoder_loras = []
         diffs = {}
 
-    for i, (lora_o, lora_t) in enumerate(zip(lora_network_o.unet_loras, lora_network_t.unet_loras)):
+    for i, (lora_o, lora_t) in enumerate(
+        zip(lora_network_o.unet_loras, lora_network_t.unet_loras)
+    ):
         lora_name = lora_o.lora_name
         module_o = lora_o.org_module
         module_t = lora_t.org_module
@@ -125,14 +163,18 @@ def svd(args):
             kernel_size = None if not conv2d else mat.size()[2:4]
             conv2d_3x3 = conv2d and kernel_size != (1, 1)
 
-            rank = args.dim if not conv2d_3x3 or args.conv_dim is None else args.conv_dim
+            rank = (
+                args.dim if not conv2d_3x3 or args.conv_dim is None else args.conv_dim
+            )
             out_dim, in_dim = mat.size()[0:2]
 
             if args.device:
                 mat = mat.to(args.device)
 
             # print(lora_name, mat.size(), mat.device, rank, in_dim, out_dim)
-            rank = min(rank, in_dim, out_dim)  # LoRA rank cannot exceed the original dim
+            rank = min(
+                rank, in_dim, out_dim
+            )  # LoRA rank cannot exceed the original dim
 
             if conv2d:
                 if conv2d_3x3:
@@ -172,8 +214,12 @@ def svd(args):
         lora_sd[lora_name + ".alpha"] = torch.tensor(down_weight.size()[0])
 
     # load state dict to LoRA and save it
-    lora_network_save, lora_sd = lora.create_network_from_weights(1.0, None, None, text_encoders_o, unet_o, weights_sd=lora_sd)
-    lora_network_save.apply_to(text_encoders_o, unet_o)  # create internal module references for state_dict
+    lora_network_save, lora_sd = lora.create_network_from_weights(
+        1.0, None, None, text_encoders_o, unet_o, weights_sd=lora_sd
+    )
+    lora_network_save.apply_to(
+        text_encoders_o, unet_o
+    )  # create internal module references for state_dict
 
     info = lora_network_save.load_state_dict(lora_sd)
     print(f"Loading extracted LoRA weights: {info}")
@@ -200,7 +246,14 @@ def svd(args):
     if not args.no_metadata:
         title = os.path.splitext(os.path.basename(args.save_to))[0]
         sai_metadata = sai_model_spec.build_metadata(
-            None, args.v2, args.v_parameterization, args.sdxl, True, False, time.time(), title=title
+            None,
+            args.v2,
+            args.v_parameterization,
+            args.sdxl,
+            True,
+            False,
+            time.time(),
+            title=title,
         )
         metadata.update(sai_metadata)
 
@@ -210,7 +263,11 @@ def svd(args):
 
 def setup_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--v2", action="store_true", help="load Stable Diffusion v2.x model / Stable Diffusion 2.xのモデルを読み込む")
+    parser.add_argument(
+        "--v2",
+        action="store_true",
+        help="load Stable Diffusion v2.x model / Stable Diffusion 2.xのモデルを読み込む",
+    )
     parser.add_argument(
         "--v_parameterization",
         type=bool,
@@ -218,7 +275,9 @@ def setup_parser() -> argparse.ArgumentParser:
         help="make LoRA metadata for v-parameterization (default is same to v2) / 作成するLoRAのメタデータにv-parameterization用と設定する（省略時はv2と同じ）",
     )
     parser.add_argument(
-        "--sdxl", action="store_true", help="load Stable Diffusion SDXL base model / Stable Diffusion SDXL baseのモデルを読み込む"
+        "--sdxl",
+        action="store_true",
+        help="load Stable Diffusion SDXL base model / Stable Diffusion SDXL baseのモデルを読み込む",
     )
     parser.add_argument(
         "--save_precision",
@@ -240,16 +299,29 @@ def setup_parser() -> argparse.ArgumentParser:
         help="Stable Diffusion tuned model, LoRA is difference of `original to tuned`: ckpt or safetensors file / 派生モデル（生成されるLoRAは元→派生の差分になります）、ckptまたはsafetensors",
     )
     parser.add_argument(
-        "--save_to", type=str, default=None, help="destination file name: ckpt or safetensors file / 保存先のファイル名、ckptまたはsafetensors"
+        "--save_to",
+        type=str,
+        default=None,
+        help="destination file name: ckpt or safetensors file / 保存先のファイル名、ckptまたはsafetensors",
     )
-    parser.add_argument("--dim", type=int, default=4, help="dimension (rank) of LoRA (default 4) / LoRAの次元数（rank）（デフォルト4）")
+    parser.add_argument(
+        "--dim",
+        type=int,
+        default=4,
+        help="dimension (rank) of LoRA (default 4) / LoRAの次元数（rank）（デフォルト4）",
+    )
     parser.add_argument(
         "--conv_dim",
         type=int,
         default=None,
         help="dimension (rank) of LoRA for Conv2d-3x3 (default None, disabled) / LoRAのConv2d-3x3の次元数（rank）（デフォルトNone、適用なし）",
     )
-    parser.add_argument("--device", type=str, default=None, help="device to use, cuda for GPU / 計算を行うデバイス、cuda でGPUを使う")
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="device to use, cuda for GPU / 計算を行うデバイス、cuda でGPUを使う",
+    )
     parser.add_argument(
         "--no_metadata",
         action="store_true",
